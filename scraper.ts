@@ -611,7 +611,7 @@ async function main() {
     for (let line of fs.readFileSync("hundrednames.txt").toString().replace(/\r/g, "").trim().split("\n"))
         HundredNames.push(line.trim().toUpperCase());
 
-    // Read the main page of development applications.
+    // Read the main page that has links to each year of development applications.
 
     console.log(`Retrieving page: ${DevelopmentApplicationsUrl}`);
 
@@ -619,31 +619,74 @@ async function main() {
     await sleep(2000 + getRandom(0, 5) * 1000);
     let $ = cheerio.load(body);
 
-    let pdfUrls: string[] = [];
+    let yearPageUrls: string[] = [];
     for (let element of $("div.unityHtmlArticle p a").get()) {
-        let pdfUrl = new urlparser.URL(element.attribs.href, DevelopmentApplicationsUrl).href
-        if (pdfUrl.toLowerCase().includes(".pdf"))
-            if (!pdfUrls.some(url => url === pdfUrl))
-                pdfUrls.push(pdfUrl);
+        let yearPageUrl = new urlparser.URL(element.attribs.href, DevelopmentApplicationsUrl).href
+        if ($(element).text().toLowerCase().includes("register"))
+            if (!yearPageUrls.some(url => url === yearPageUrl))
+                yearPageUrls.push(yearPageUrl);
     }
 
-    if (pdfUrls.length === 0) {
-        console.log("No PDF files were found on the pages examined.");
+    if (yearPageUrls.length === 0) {
+        console.log("No PDF files to examine were found.");
         return;
     }
 
-    // Select the most recent PDF.  And randomly select one other PDF (avoid processing all PDFs
-    // at once because this may use too much memory, resulting in morph.io terminating the current
-    // process).
+    // Select the current year and randomly select one other year (this is purposely allowed to
+    // even be the same year as the current year).
 
-    console.log(`Found ${pdfUrls.length} PDF file(s).  Selecting two to parse.`);
+    let currentYearPageUrl = yearPageUrls[0];
+    let randomYearPageUrl = yearPageUrls[getRandom(0, yearPageUrls.length)];
 
     let selectedPdfUrls: string[] = [];
-    selectedPdfUrls.push(pdfUrls.shift());  // the most recent PDF
-    if (pdfUrls.length > 0)
-        selectedPdfUrls.push(pdfUrls[getRandom(0, pdfUrls.length)]);  // a randomly selected PDF
-    if (getRandom(0, 2) === 0)
-        selectedPdfUrls.reverse();
+
+    // Read the current year page and select the most recent PDF.
+
+    console.log(`Retrieving current year page: ${currentYearPageUrl}`);
+
+    body = await request({ url: currentYearPageUrl, rejectUnauthorized: false, proxy: process.env.MORPH_PROXY });
+    await sleep(2000 + getRandom(0, 5) * 1000);
+    $ = cheerio.load(body);
+
+    let currentYearPdfUrls: string[] = [];
+
+    for (let element of $("div.unityHtmlArticle p a").get()) {
+        let pdfUrl = new urlparser.URL(element.attribs.href, DevelopmentApplicationsUrl).href
+        if ($(element).text().toLowerCase().includes("register") && pdfUrl.toLowerCase().includes(".pdf"))
+            if (!currentYearPdfUrls.some(url => url === pdfUrl))
+                currentYearPdfUrls.push(pdfUrl);
+    }
+
+    if (currentYearPdfUrls.length > 0)
+        selectedPdfUrls.push(currentYearPdfUrls.pop());
+
+    // Read the random year page and randomly select a PDF from that page.
+    
+    console.log(`Retrieving random year page: ${randomYearPageUrl}`);
+
+    body = await request({ url: randomYearPageUrl, rejectUnauthorized: false, proxy: process.env.MORPH_PROXY });
+    await sleep(2000 + getRandom(0, 5) * 1000);
+    $ = cheerio.load(body);
+
+    let randomYearPdfUrls: string[] = [];
+
+    for (let element of $("div.unityHtmlArticle p a").get()) {
+        let pdfUrl = new urlparser.URL(element.attribs.href, DevelopmentApplicationsUrl).href
+        if ($(element).text().toLowerCase().includes("register") && pdfUrl.toLowerCase().includes(".pdf"))
+            if (!randomYearPdfUrls.some(url => url === pdfUrl))
+                randomYearPdfUrls.push(pdfUrl);
+    }
+
+    if (randomYearPdfUrls.length > 0)
+        selectedPdfUrls.push(randomYearPdfUrls[getRandom(0, randomYearPdfUrls.length)]);
+    
+    // Parse the selected PDFs (avoid processing all PDFs at once because this may use too much
+    // memory, resulting in morph.io terminating the current process).
+
+    if (selectedPdfUrls.length === 0) {
+        console.log("No PDF files were selected to be examined.");
+        return;
+    }
 
     for (let pdfUrl of selectedPdfUrls) {
         console.log(`Parsing document: ${pdfUrl}`);
