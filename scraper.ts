@@ -35,7 +35,7 @@ async function initializeDatabase() {
     return new Promise((resolve, reject) => {
         let database = new sqlite3.Database("data.sqlite");
         database.serialize(() => {
-            database.run("create table if not exists [data] ([council_reference] text primary key, [address] text, [description] text, [info_url] text, [comment_url] text, [date_scraped] text, [date_received] text, [legal_description] text)");
+            database.run("create table if not exists [data] ([council_reference] text primary key, [address] text, [description] text, [info_url] text, [comment_url] text, [date_scraped] text, [date_received] text)");
             resolve(database);
         });
     });
@@ -45,7 +45,7 @@ async function initializeDatabase() {
 
 async function insertRow(database, developmentApplication) {
     return new Promise((resolve, reject) => {
-        let sqlStatement = database.prepare("insert or ignore into [data] values (?, ?, ?, ?, ?, ?, ?, ?)");
+        let sqlStatement = database.prepare("insert or ignore into [data] values (?, ?, ?, ?, ?, ?, ?)");
         sqlStatement.run([
             developmentApplication.applicationNumber,
             developmentApplication.address,
@@ -53,17 +53,16 @@ async function insertRow(database, developmentApplication) {
             developmentApplication.informationUrl,
             developmentApplication.commentUrl,
             developmentApplication.scrapeDate,
-            developmentApplication.receivedDate,
-            developmentApplication.legalDescription
+            developmentApplication.receivedDate
         ], function(error, row) {
             if (error) {
                 console.error(error);
                 reject(error);
             } else {
                 if (this.changes > 0)
-                    console.log(`    Inserted: application \"${developmentApplication.applicationNumber}\" with address \"${developmentApplication.address}\", description \"${developmentApplication.description}\", legal description \"${developmentApplication.legalDescription}\" and received date \"${developmentApplication.receivedDate}\" into the database.`);
+                    console.log(`    Inserted: application \"${developmentApplication.applicationNumber}\" with address \"${developmentApplication.address}\", description \"${developmentApplication.description}\" and received date \"${developmentApplication.receivedDate}\" into the database.`);
                 else
-                    console.log(`    Skipped: application \"${developmentApplication.applicationNumber}\" with address \"${developmentApplication.address}\", description \"${developmentApplication.description}\", legal description \"${developmentApplication.legalDescription}\" and received date \"${developmentApplication.receivedDate}\" because it was already present in the database.`);
+                    console.log(`    Skipped: application \"${developmentApplication.applicationNumber}\" with address \"${developmentApplication.address}\", description \"${developmentApplication.description}\" and received date \"${developmentApplication.receivedDate}\" because it was already present in the database.`);
                 sqlStatement.finalize();  // releases any locks
                 resolve(row);
             }
@@ -372,56 +371,42 @@ function addressComparer(a, b) {
         return -1;
 }
 
-// Constructs bounds based on a left element and an option right element in which text is
-// expected to be found.
-
-function constructBounds(leftElement: Element, rightElement: Element) {
-    return {
-        x: leftElement.x + leftElement.width,
-        y: leftElement.y,
-        width: (rightElement === undefined) ? (leftElement.width * 3) : (rightElement.x - leftElement.x - leftElement.width),
-        height: leftElement.height
-    };
-}
-
 // Parses the details from the elements associated with a single page of the PDF (corresponding
 // to a single development application).
 
-function parseApplicationElements(elements: Element[], informationUrl: string) {
+function parseOldFormatApplicationElements(elements: Element[], informationUrl: string) {
     // Get the application number (by finding all elements that are at least 10% within the
     // calculated bounding rectangle).
 
-    let applicationNumberHeadingElement = elements.find(element => element.text.toLowerCase().replace(/\s/g, "").startsWith("applicationno"));
-    let fullDevelopmentApprovalHeadingElement = elements.find(element => element.text.toLowerCase().replace(/\s/g, "") === "fulldevelopmentapproval");
-    let applicationReceivedHeadingElement = elements.find(element => element.text.toLowerCase().replace(/\s/g, "") === "applicationreceived");
-    if (applicationReceivedHeadingElement === undefined)
-        applicationReceivedHeadingElement = elements.find(element => element.text.toLowerCase().replace(/\s/g, "") === "applicationrdate");
-    let developmentDescriptionHeadingElement = elements.find(element => element.text.toLowerCase().replace(/\s/g, "") === "developmentdescription");
-    let relevantAuthorityHeadingElement = elements.find(element => element.text.toLowerCase().replace(/\s/g, "") === "relevantauthority");
-    let houseNumberHeadingElement = elements.find(element => element.text.toLowerCase().replace(/\s/g, "") === "houseno");
-    let lotNumberHeadingElement = elements.find(element => element.text.toLowerCase().replace(/\s/g, "") === "lotno");
-    let sectionNumberHeadingElement = elements.find(element => element.text.toLowerCase().replace(/\s/g, "") === "sectionno");
-    let planIdHeadingElement = elements.find(element => element.text.toLowerCase().replace(/\s/g, "") === "planid");
-    let propertyStreetHeadingElement = elements.find(element => element.text.toLowerCase().replace(/\s/g, "") === "propertystreet");
-    let propertySuburbHeadingElement = elements.find(element => element.text.toLowerCase().replace(/\s/g, "") === "propertysuburb");
-    let titleHeadingElement = elements.find(element => element.text.toLowerCase().replace(/\s/g, "") === "title");
-    let hundredHeadingElement = elements.find(element => element.text.toLowerCase().replace(/\s/g, "") === "hundredof");
-    
-    if (applicationNumberHeadingElement === undefined) {
+    let applicationHeadingElement = elements.find(element => element.text.toLowerCase().replace(/\s/g, "") === "applicationnumber:");
+    let applicationFeesHeadingElement = elements.find(element => element.text.toLowerCase().replace(/\s/g, "") === "applicationfees:");
+    let applicationDateHeadingElement = elements.find(element => element.text.toLowerCase().replace(/\s/g, "") === "applicationdate:");
+    let developmentCompletedHeadingElement = elements.find(element => element.text.toLowerCase().replace(/\s/g, "") === "developmentcompleted:");
+    let propertyAddressHeadingElement = elements.find(element => element.text.toLowerCase().replace(/\s/g, "") === "propertyaddress:");
+    let developmentDescriptionHeadingElement = elements.find(element => element.text.toLowerCase().replace(/\s/g, "") === "developmentdescription:");
+    let relevantAuthorityHeadingElement = elements.find(element => element.text.toLowerCase().replace(/\s/g, "") === "relevantauthority:");
+
+    // Get the development application number.
+
+    if (applicationHeadingElement === undefined) {
         let elementSummary = elements.map(element => `[${element.text}]`).join("");
-        console.log(`Ignoring the page because the "Application No" text is missing.  Elements: ${elementSummary}`);
+        console.log(`Ignoring the page because the "Application Number" heading is missing.  Elements: ${elementSummary}`);
         return undefined;
     }
 
-    // Get the application number.
-
-    let applicationNumberBounds = constructBounds(applicationNumberHeadingElement, fullDevelopmentApprovalHeadingElement);
+    let applicationNumber = "";
+    let applicationNumberBounds = {
+        x: applicationHeadingElement.x + applicationHeadingElement.width,
+        y: applicationHeadingElement.y,
+        width: (applicationFeesHeadingElement === undefined) ? (applicationHeadingElement.width * 3) : (applicationFeesHeadingElement.x - applicationHeadingElement.x - applicationHeadingElement.width),
+        height: applicationHeadingElement.height
+    };
     let applicationNumberElement = elements.find(element => getPercentageOfElementInRectangle(element, applicationNumberBounds) > 10);
-    let applicationNumber = (applicationNumberElement === undefined) ? "" : applicationNumberElement.text.replace(/\s/g, "");
-    
+    applicationNumber = (applicationNumberElement === undefined) ? "" : applicationNumberElement.text.replace(/\s/g, "");
+
     if (applicationNumber === "") {
         let elementSummary = elements.map(element => `[${element.text}]`).join("");
-        console.log(`Could not find the application number on the PDF page for the current development application.  The development application will be ignored.  Elements: ${elementSummary}`);
+        console.log(`Ignoring the page because the development application number text is missing.  Elements: ${elementSummary}`);
         return undefined;
     }
 
@@ -429,68 +414,52 @@ function parseApplicationElements(elements: Element[], informationUrl: string) {
 
     // Get the received date.
 
-    let receivedDateBounds = constructBounds(applicationReceivedHeadingElement, fullDevelopmentApprovalHeadingElement);
-    let receivedDateElement = elements.find(element => getPercentageOfElementInRectangle(element, receivedDateBounds) > 10);
     let receivedDate = moment.invalid();
-    if (receivedDateElement !== undefined)
-        receivedDate = moment(receivedDateElement.text.trim(), "D/MM/YYYY", true);  // allows the leading zero of the day to be omitted
+    if (applicationDateHeadingElement !== undefined) {
+        let receivedDateBounds = {
+            x: applicationDateHeadingElement.x + applicationDateHeadingElement.width,
+            y: applicationDateHeadingElement.y,
+            width: (developmentCompletedHeadingElement === undefined) ? (applicationDateHeadingElement.width * 3) : (developmentCompletedHeadingElement.x - applicationDateHeadingElement.x - applicationDateHeadingElement.width),
+            height: applicationDateHeadingElement.height
+        };
+        let receivedDateElement = elements.find(element => getPercentageOfElementInRectangle(element, receivedDateBounds) > 10);
+        if (receivedDateElement !== undefined)
+            receivedDate = moment(receivedDateElement.text.trim(), "D/M/YYYY", true);  // allows the leading zero of the day or month to be omitted
+    }
 
-    // Get the description.
-    
-    let descriptionBounds = constructBounds(developmentDescriptionHeadingElement, fullDevelopmentApprovalHeadingElement);
-    descriptionBounds.height = (relevantAuthorityHeadingElement === undefined) ? (developmentDescriptionHeadingElement.height * 2) : (relevantAuthorityHeadingElement.y - developmentDescriptionHeadingElement.y);
-    let description = elements.filter(element => getPercentageOfElementInRectangle(element, descriptionBounds) > 10).map(element => element.text).join(" ").trim().replace(/\s\s+/g, " ");
-
-    // Get the legal description.
-
-    let legalElements = [];
-
-    let lotNumberBounds = constructBounds(lotNumberHeadingElement, fullDevelopmentApprovalHeadingElement);
-    let lotNumberElement = elements.find(element => getPercentageOfElementInRectangle(element, lotNumberBounds) > 10);
-    if (lotNumberElement !== undefined && lotNumberElement.text.trim() !== "")
-        legalElements.push(`Lot ${lotNumberElement.text.trim()}`);
-
-    let sectionNumberBounds = constructBounds(sectionNumberHeadingElement, fullDevelopmentApprovalHeadingElement);
-    let sectionNumberElement = elements.find(element => getPercentageOfElementInRectangle(element, sectionNumberBounds) > 10);
-    if (sectionNumberElement !== undefined && sectionNumberElement.text.trim() !== "")
-        legalElements.push(`Section ${sectionNumberElement.text.trim()}`);
-
-    let planIdBounds = constructBounds(planIdHeadingElement, fullDevelopmentApprovalHeadingElement);
-    let planIdElement = elements.find(element => getPercentageOfElementInRectangle(element, planIdBounds) > 10);
-    if (planIdElement !== undefined && planIdElement.text.trim() !== "")
-        legalElements.push(`Plan ${planIdElement.text.trim()}`);
-
-    let titleBounds = constructBounds(titleHeadingElement, fullDevelopmentApprovalHeadingElement);
-    let titleElement = elements.find(element => getPercentageOfElementInRectangle(element, titleBounds) > 10);
-    if (titleElement !== undefined && titleElement.text.trim() !== "")
-        legalElements.push(`Title ${titleElement.text.trim()}`);
-
-    let hundredNameBounds = constructBounds(hundredHeadingElement, fullDevelopmentApprovalHeadingElement);
-    let hundredNameElement = elements.find(element => getPercentageOfElementInRectangle(element, hundredNameBounds) > 10);
-    if (hundredNameElement !== undefined && hundredNameElement.text.trim() !== "")
-        legalElements.push(`Hundred ${hundredNameElement.text.trim()}`);
-
-    let legalDescription = legalElements.join(", ");
-    
     // Get the address.
 
-    let houseNumberBounds = constructBounds(houseNumberHeadingElement, fullDevelopmentApprovalHeadingElement);
-    let houseNumberElement = elements.find(element => getPercentageOfElementInRectangle(element, houseNumberBounds) > 10);
-    let houseNumber = (houseNumberElement === undefined) ? "" : houseNumberElement.text.trim();
-
-    let streetNameBounds = constructBounds(propertyStreetHeadingElement, fullDevelopmentApprovalHeadingElement);
-    let streetNameElement = elements.find(element => getPercentageOfElementInRectangle(element, streetNameBounds) > 10);
-    let streetName = (streetNameElement === undefined) ? "" : streetNameElement.text.trim();
-
-    let suburbNameBounds = constructBounds(propertySuburbHeadingElement, fullDevelopmentApprovalHeadingElement);
-    let suburbNameElement = elements.find(element => getPercentageOfElementInRectangle(element, suburbNameBounds) > 10);
-    let suburbName = (suburbNameElement === undefined) ? "" : suburbNameElement.text.trim();
-
-    let address = parseAddress(houseNumber, streetName, suburbName);
-    if (address === "" || (houseNumber === "0" && streetName === "0" && suburbName === "0")) {
+    if (propertyAddressHeadingElement === undefined) {
         let elementSummary = elements.map(element => `[${element.text}]`).join("");
-        console.log(`Could not find an address for the current development application.  The development application will be ignored.  Elements: ${elementSummary}`);
+        console.log(`Ignoring the page because the "Property Address" heading is missing.  Elements: ${elementSummary}`);
         return undefined;
+    }
+
+    let addressBounds = {
+        x: propertyAddressHeadingElement.x + propertyAddressHeadingElement.width,
+        y: propertyAddressHeadingElement.y,
+        width: (applicationFeesHeadingElement === undefined) ? (propertyAddressHeadingElement.width * 3) : (applicationFeesHeadingElement.x - propertyAddressHeadingElement.x - propertyAddressHeadingElement.width),
+        height: propertyAddressHeadingElement.height
+    };
+    let address = elements.filter(element => getPercentageOfElementInRectangle(element, addressBounds) > 10).map(element => element.text).join(" ").trim().replace(/\s\s+/g, " ");
+
+    if (address === "") {
+        let elementSummary = elements.map(element => `[${element.text}]`).join("");
+        console.log(`Could not find an address for the current development application ${applicationNumber}.  The development application will be ignored.  Elements: ${elementSummary}`);
+        return undefined;
+    }
+
+    // Get the description.
+
+    let description = "";
+    if (developmentDescriptionHeadingElement !== undefined) {
+        let descriptionBounds = {
+            x: developmentDescriptionHeadingElement.x + developmentDescriptionHeadingElement.width,
+            y: developmentDescriptionHeadingElement.y,
+            width: (applicationFeesHeadingElement === undefined) ? (developmentDescriptionHeadingElement.width * 3) : (applicationFeesHeadingElement.x - developmentDescriptionHeadingElement.x - developmentDescriptionHeadingElement.width),
+            height: (relevantAuthorityHeadingElement === undefined) ? Number.MAX_VALUE : (relevantAuthorityHeadingElement.y - developmentDescriptionHeadingElement.y)
+        };
+        description = elements.filter(element => getPercentageOfElementInRectangle(element, descriptionBounds) > 10).map(element => element.text).join(" ").trim().replace(/\s\s+/g, " ");
     }
 
     return {
@@ -500,8 +469,111 @@ function parseApplicationElements(elements: Element[], informationUrl: string) {
         informationUrl: informationUrl,
         commentUrl: CommentUrl,
         scrapeDate: moment().format("YYYY-MM-DD"),
-        receivedDate: receivedDate.isValid() ? receivedDate.format("YYYY-MM-DD") : "",
-        legalDescription: legalDescription
+        receivedDate: receivedDate.isValid() ? receivedDate.format("YYYY-MM-DD") : ""
+    }
+}
+
+// Parses the details from the elements associated with a single page of the PDF (corresponding
+// to a single development application).
+
+function parseNewFormatApplicationElements(elements: Element[], informationUrl: string) {
+    // Get the application number (by finding all elements that are at least 10% within the
+    // calculated bounding rectangle).
+
+    let applicationHeadingElement = elements.find(element => element.text.toLowerCase().replace(/\s/g, "").startsWith("development"));
+    let applicationDateHeadingElement = elements.find(element => element.text.toLowerCase().replace(/\s/g, "") === "applicationdate");
+    let assessmentNumberHeadingElement = elements.find(element => element.text.toLowerCase().replace(/\s/g, "") === "assessmentnumber");
+    let developmentDescriptionHeadingElement = elements.find(element => element.text.toLowerCase().replace(/\s/g, "") === "developmentdescription");
+
+    // Get the development application number.
+
+    if (applicationHeadingElement === undefined) {
+        let elementSummary = elements.map(element => `[${element.text}]`).join("");
+        console.log(`Ignoring the page because the "Development" heading is missing.  Elements: ${elementSummary}`);
+        return undefined;
+    }
+
+    let applicationNumber = "";
+    let tokens = applicationHeadingElement.text.trim().replace(/\s\s+/g, " ").split(" ");
+    if (tokens.length >= 2)
+        applicationNumber = tokens[1];
+    else {
+        let applicationNumberBounds = {
+            x: applicationHeadingElement.x + applicationHeadingElement.width,
+            y: applicationHeadingElement.y,
+            width: (applicationDateHeadingElement === undefined) ? (applicationHeadingElement.width * 3) : (applicationDateHeadingElement.x - applicationHeadingElement.x - applicationHeadingElement.width),
+            height: applicationHeadingElement.height
+        };
+        let applicationNumberElement = elements.find(element => getPercentageOfElementInRectangle(element, applicationNumberBounds) > 10);
+        applicationNumber = (applicationNumberElement === undefined) ? "" : applicationNumberElement.text.replace(/\s/g, "");
+    }
+
+    if (applicationNumber === "") {
+        let elementSummary = elements.map(element => `[${element.text}]`).join("");
+        console.log(`Ignoring the page because the development application number text is missing.  Elements: ${elementSummary}`);
+        return undefined;
+    }
+
+    console.log(`    Found \"${applicationNumber}\".`);
+
+    // Get the received date.
+
+    let receivedDate = moment.invalid();
+    if (applicationDateHeadingElement !== undefined) {
+        let receivedDateBounds = {
+            x: applicationDateHeadingElement.x + applicationDateHeadingElement.width,
+            y: applicationDateHeadingElement.y,
+            width: Number.MAX_VALUE,
+            height: applicationDateHeadingElement.height
+        };
+        let receivedDateElement = elements.find(element => getPercentageOfElementInRectangle(element, receivedDateBounds) > 10);
+        if (receivedDateElement !== undefined)
+            receivedDate = moment(receivedDateElement.text.trim(), "D/M/YYYY", true);  // allows the leading zero of the day or month to be omitted
+    }
+
+    // Get the address.
+
+    if (assessmentNumberHeadingElement === undefined) {
+        let elementSummary = elements.map(element => `[${element.text}]`).join("");
+        console.log(`Ignoring the page because the "Assessment Number" heading is missing.  Elements: ${elementSummary}`);
+        return undefined;
+    }
+
+    let addressBounds = {
+        x: assessmentNumberHeadingElement.x + assessmentNumberHeadingElement.width,
+        y: assessmentNumberHeadingElement.y + assessmentNumberHeadingElement.height,
+        width: Number.MAX_VALUE,
+        height: (developmentDescriptionHeadingElement === undefined) ? 2 * assessmentNumberHeadingElement.height : (developmentDescriptionHeadingElement.y - (assessmentNumberHeadingElement.y + assessmentNumberHeadingElement.height))
+    };
+    let address = elements.filter(element => getPercentageOfElementInRectangle(element, addressBounds) > 10).map(element => element.text).join(" ").trim().replace(/\s\s+/g, " ");
+
+    if (address === "") {
+        let elementSummary = elements.map(element => `[${element.text}]`).join("");
+        console.log(`Could not find an address for the current development application ${applicationNumber}.  The development application will be ignored.  Elements: ${elementSummary}`);
+        return undefined;
+    }
+
+    // Get the description.
+
+    let description = "";
+    if (developmentDescriptionHeadingElement !== undefined) {
+        let descriptionBounds = {
+            x: developmentDescriptionHeadingElement.x + developmentDescriptionHeadingElement.width,
+            y: developmentDescriptionHeadingElement.y,
+            width: Number.MAX_VALUE,
+            height: developmentDescriptionHeadingElement.height
+        };
+        description = elements.filter(element => getPercentageOfElementInRectangle(element, descriptionBounds) > 10).map(element => element.text).join(" ").trim().replace(/\s\s+/g, " ");
+    }
+
+    return {
+        applicationNumber: applicationNumber,
+        address: address,
+        description: (description === "") ? "No description provided" : description,
+        informationUrl: informationUrl,
+        commentUrl: CommentUrl,
+        scrapeDate: moment().format("YYYY-MM-DD"),
+        receivedDate: receivedDate.isValid() ? receivedDate.format("YYYY-MM-DD") : ""
     }
 }
 
@@ -522,7 +594,7 @@ async function parsePdf(url: string) {
     // memory usage by the PDF (just calling page._destroy() on each iteration of the loop appears
     // not to be enough to release all memory used by the PDF parsing).
 
-    for (let pageIndex = 0; pageIndex < 5000; pageIndex++) {  // limit to an arbitrarily large number of pages (to avoid any chance of an infinite loop)
+    for (let pageIndex = 0; pageIndex < 100; pageIndex++) {  // limit to an arbitrarily large number of pages (to avoid any chance of an infinite loop)
         let pdf = await pdfjs.getDocument({ data: buffer, disableFontFace: true, ignoreErrors: true });
         if (pageIndex >= pdf.numPages)
             break;
@@ -556,7 +628,13 @@ async function parsePdf(url: string) {
         let elementComparer = (a, b) => (a.y > b.y) ? 1 : ((a.y < b.y) ? -1 : ((a.x > b.x) ? 1 : ((a.x < b.x) ? -1 : 0)));
         elements.sort(elementComparer);
 
-        let developmentApplication = parseApplicationElements(elements, url);
+        let developmentApplication = undefined;
+
+        if (elements.find(element => element.text.toLowerCase().replace(/\s/g, "") === "applicationfees:") === undefined)
+            developmentApplication = parseNewFormatApplicationElements(elements, url);
+        else
+            developmentApplication = parseOldFormatApplicationElements(elements, url);
+
         if (developmentApplication !== undefined)
             if (!developmentApplications.some(otherDevelopmentApplication => otherDevelopmentApplication.applicationNumber === developmentApplication.applicationNumber))  // ignore duplicates
                 developmentApplications.push(developmentApplication);
@@ -628,7 +706,7 @@ async function main() {
     }
 
     if (yearPageUrls.length === 0) {
-        console.log("No PDF files to examine were found.");
+        console.log("No PDF files were found to examine.");
         return;
     }
 
